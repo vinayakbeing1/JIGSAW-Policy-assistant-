@@ -1,0 +1,13 @@
+# Jigsaw Insurance product catalogue used by the sample documents.
+- code: HOME
+  name: Jigsaw Home Insurance
+  line_of_business: Personal lines - household
+- code: MOTOR
+  name: Jigsaw Car Insurance
+  line_of_business: Personal lines - motor
+- code: TRAVEL
+  name: Jigsaw Travel Insurance
+  line_of_business: Personal lines - travel
+- code: SHOP
+  name: Jigsaw Shop and Office Insurance
+  line_of_business: Commercial lines - small business package

@@ -1,0 +1,126 @@
+# Jigsaw Policy Assistant - local and single-host deployment.
+#
+#   cp .env.example .env              # then set the passwords and OPENAI_API_KEY
+#   docker compose up -d --build      # db, migrations, api, worker
+#   docker compose run --rm api python -m app.cli seed
+#   open http://localhost:8000
+#
+#   docker compose run --rm tests     # test suite against a separate test database
+#   docker compose run --rm eval      # evaluation against the golden set (uses the OpenAI API)
+
+name: jigsaw-policy-assistant
+
+x-database-url: &database-url postgresql+psycopg://${APP_DB_USER:-jigsaw_app}:${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}@db:5432/${POSTGRES_DB:-jigsaw_policy}
+
+x-app: &app
+  build:
+    context: .
+    target: runtime
+  image: jigsaw-policy-assistant:latest
+  env_file: .env
+  environment:
+    DATABASE_URL: *database-url
+    STORAGE_DIR: /data/uploads
+  volumes:
+    - uploads:/data/uploads
+  read_only: true
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jigsaw_policy}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?Set POSTGRES_SUPERUSER_PASSWORD in .env}
+      APP_DB_USER: ${APP_DB_USER:-jigsaw_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${DB_PORT:-5434}:5432"
+    healthcheck:
+      # TCP rather than the socket: the init scripts run on a socket-only server, so "healthy" means the
+      # application role and test database already exist.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["python", "-m", "app.cli", "migrate"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 6s
+      start_period: 20s
+      retries: 3
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.cli", "worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  tests:
+    profiles: [tools]
+    build:
+      context: .
+      target: dev
+    image: jigsaw-policy-assistant:dev
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg://${APP_DB_USER:-jigsaw_app}:${APP_DB_PASSWORD}@db:5432/${POSTGRES_DB:-jigsaw_policy}_test
+    volumes:
+      - .:/app
+    command: ["pytest"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  eval:
+    profiles: [tools]
+    image: jigsaw-policy-assistant:dev
+    build:
+      context: .
+      target: dev
+    env_file: .env
+    environment:
+      DATABASE_URL: *database-url
+      STORAGE_DIR: /data/uploads
+    volumes:
+      - .:/app
+      - uploads:/data/uploads
+    command: ["python", "-m", "eval.run_eval"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:

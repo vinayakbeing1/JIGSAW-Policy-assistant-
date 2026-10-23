@@ -1,0 +1,78 @@
+[project]
+name = "jigsaw-policy-assistant"
+version = "1.0.0"
+description = "Internal assistant that answers staff questions from Jigsaw Insurance policy wordings, with page citations."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = { text = "Proprietary - Jigsaw Insurance" }
+dependencies = [
+    # Web
+    "fastapi>=0.143,<0.144",
+    "uvicorn>=0.54,<0.55",
+    "python-multipart>=0.0.32",
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.15,<3",
+    # Database
+    "sqlalchemy>=2.1,<2.2",
+    "alembic>=1.20,<2",
+    "psycopg[binary]>=3.3,<4",
+    "pgvector>=0.5,<0.6",
+    # LLM / RAG
+    "langchain-core>=1.6,<2",
+    "langchain-openai>=1.7,<2",
+    "langchain-text-splitters>=1.1,<2",
+    # Cross-encoder reranking (ONNX Runtime, no PyTorch)
+    "fastembed>=0.9,<0.10",
+    # PDF processing and OCR
+    "pdfplumber>=0.11.10,<0.12",
+    "pypdf>=6.20,<7",
+    "pypdfium2>=5.13,<6",
+    "pytesseract>=0.3.13,<0.4",
+    # Security and logging
+    "argon2-cffi>=25.1,<26",
+    "structlog>=26.1,<27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1,<10",
+    "httpx>=0.28,<0.29",
+    "ruff>=0.17,<0.18",
+    # Only used to build the sample PDFs in sample_data/
+    "reportlab>=5.0,<6",
+    "pyyaml>=6.0,<7",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["data"]  # local runtime data, git-ignored
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = [
+    "S101",   # assert in tests
+    "S608",   # SQL is built from constants; values are always bound parameters
+    "B008",   # FastAPI Depends() in argument defaults
+    "RUF001", # pound / euro signs and dashes in policy text are intentional
+    "RUF002",
+    "RUF003",
+    "E501",   # line length is handled by `ruff format`; long strings stay intact
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S311"]
+"eval/**" = ["S311"]
+
+[tool.pylint.format]
+max-line-length = 110  # keep editors that run pylint in line with ruff
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = ["integration: needs PostgreSQL with pgvector (TEST_DATABASE_URL)"]
+filterwarnings = ["ignore::DeprecationWarning:pdfminer.*"]

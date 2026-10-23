@@ -1,0 +1,4 @@
+# Ruff (pyproject.toml) is the linter; this only aligns editors that run flake8/pycodestyle.
+[flake8]
+max-line-length = 110
+extend-ignore = E203, E501, W503
